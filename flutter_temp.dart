@@ -11,6 +11,21 @@ void main(List<String> arguments) async {
 
   print('\n--- 🏗️  STARTING ADVANCED RIVERPOD PROJECT CREATION: $projectName ---');
 
+  // ০. Host environment detect
+  print('Step 0: Detecting host environment (Flutter & Dart SDK)...');
+  final flutterResult = await Process.run('flutter', ['--version'], runInShell: true);
+  String flutterInfo = 'Flutter (active)';
+  if (flutterResult.exitCode == 0) {
+    flutterInfo = flutterResult.stdout.toString().split('\n').first.trim();
+  }
+  final String currentDartVersion = Platform.version.split(' ').first;
+  print('✅ Host: $flutterInfo | Dart SDK: $currentDartVersion');
+
+  if (Platform.isMacOS) {
+    // Proactively enable Swift Package Manager support in Flutter to prevent iOS SPM plugin errors
+    await Process.run('flutter', ['config', '--enable-swift-package-manager'], runInShell: true);
+  }
+
   // ১. flutter create command run
   print('Step 1: Running "flutter create"...');
   var createResult = await Process.run('flutter', [
@@ -22,6 +37,9 @@ void main(List<String> arguments) async {
     return;
   }
   Directory.current = Directory('${Directory.current.path}/$projectName');
+
+  // Configure Android build.gradle.kts / build.gradle to compileSdk = 37 (required by modern plugins like permission_handler)
+  _configureAndroidSdk();
 
   // ২. assets folder create
   print('Step 2: Creating Assets folders...');
@@ -211,7 +229,7 @@ class \${c}State {
   }
 }
 
-class \${c}Controller extends AutoDisposeNotifier<\${c}State> {
+class \${c}Controller extends Notifier<\${c}State> {
   late final \${c}Repository _repository;
 
   @override
@@ -272,7 +290,6 @@ class \${c}Widget extends StatelessWidget {
   // ৪. pubspec.yaml create
   print('Step 4: Writing a clean and structured pubspec.yaml (Auto-detecting SDK)...');
 
-  final String currentDartVersion = Platform.version.split(' ').first;
   final pubspecFile = File('pubspec.yaml');
 
   final String newPubspecContent = '''name: $projectName
@@ -281,7 +298,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=$currentDartVersion <4.0.0'
+  sdk: '>=3.0.0 <4.0.0'
 
 # RPS Scripts for automation
 scripts:
@@ -320,38 +337,19 @@ flutter:
     - assets/vectors/
     - .env
 
-  fonts:
-    - family: Roboto
-      fonts:
-        - asset: assets/fonts/Roboto-Thin.ttf
-          weight: 100
-        - asset: assets/fonts/Roboto-LightItalic.ttf
-          weight: 300
-          style: italic
-        - asset: assets/fonts/Roboto-Light.ttf
-          weight: 300
-        - asset: assets/fonts/Roboto-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/Roboto-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/Roboto-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/Roboto-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Roboto-SemiBoldItalic.ttf
-          style: italic
-          weight: 600
-        - asset: assets/fonts/Roboto-ExtraBold.ttf
-          style: italic
-          weight: 800
-        - asset: assets/fonts/Roboto-Black.ttf
-          weight: 900
+  # To use custom fonts, add .ttf files to assets/fonts/ and uncomment below:
+  # fonts:
+  #   - family: Roboto
+  #     fonts:
+  #       - asset: assets/fonts/Roboto-Regular.ttf
+  #       - asset: assets/fonts/Roboto-Bold.ttf
+  #         weight: 700
 ''';
 
   await pubspecFile.writeAsString(newPubspecContent);
   print('✅ pubspec.yaml generated successfully.');
 
-  print('Step 5: Installing all Riverpod, Freezed, Dio & Core dependencies...');
+  print('Step 5: Resolving & Installing dependencies for host environment ($currentDartVersion)...');
   final packages = [
     'flutter_riverpod',
     'riverpod_annotation',
@@ -381,10 +379,9 @@ flutter:
     'intl_phone_field',
     'webview_flutter',
     'image_picker',
-    'file_picker: ^11.0.2',
+    'file_picker',
     'lottie',
     'zo_animated_border',
-    'app_settings',
     'firebase_core',
     'firebase_analytics',
     'firebase_crashlytics',
@@ -393,7 +390,21 @@ flutter:
     'firebase_messaging',
     'flutter_dotenv',
   ];
-  await Process.run('flutter', ['pub', 'add', ...packages], runInShell: true);
+
+  var batchResult = await Process.run('flutter', ['pub', 'add', ...packages], runInShell: true);
+  if (batchResult.exitCode != 0) {
+    print('⚠️ Batch install encountered environment constraints, resolving dynamically for this PC...');
+    for (final pkg in packages) {
+      final res = await Process.run('flutter', ['pub', 'add', pkg], runInShell: true);
+      if (res.exitCode == 0) {
+        print('   ✅ $pkg installed.');
+      } else {
+        print('   ⚠️ $pkg skipped (incompatible with host SDK).');
+      }
+    }
+  } else {
+    print('✅ All core packages successfully installed.');
+  }
 
   final devPackages = [
     'flutter_lints',
@@ -405,12 +416,24 @@ flutter:
     'flutter_gen_runner',
     'flutter_flavorizr',
   ];
-  await Process.run('flutter', [
-    'pub',
-    'add',
-    '--dev',
-    ...devPackages,
-  ], runInShell: true);
+
+  var devBatchResult = await Process.run('flutter', ['pub', 'add', '--dev', ...devPackages], runInShell: true);
+  if (devBatchResult.exitCode != 0) {
+    print('🔄 Dynamically resolving dev packages for this PC...');
+    for (final pkg in devPackages) {
+      final res = await Process.run('flutter', ['pub', 'add', '--dev', pkg], runInShell: true);
+      if (res.exitCode == 0) {
+        print('   ✅ $pkg (dev) installed.');
+      } else {
+        print('   ⚠️ $pkg (dev) skipped.');
+      }
+    }
+  } else {
+    print('✅ All dev packages successfully installed.');
+  }
+
+  print('🔄 Verifying dependencies with "flutter pub get"...');
+  await Process.run('flutter', ['pub', 'get'], runInShell: true);
 
   // ৬. RPS global activate
   print('Step 6: Activating RPS globally...');
@@ -684,7 +707,7 @@ class SplashState {
   }
 }
 
-class SplashController extends AutoDisposeNotifier<SplashState> {
+class SplashController extends Notifier<SplashState> {
   late final SplashRepository _repository;
 
   @override
@@ -849,7 +872,13 @@ final dioProvider = Provider<Dio>((ref) {
     InterceptorsWrapper(
       onRequest: (options, handler) async {
         final connectivity = await Connectivity().checkConnectivity();
-        if (connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty) {
+        bool isOffline = false;
+        if (connectivity is List) {
+          isOffline = connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty;
+        } else if (connectivity is ConnectivityResult) {
+          isOffline = connectivity == ConnectivityResult.none;
+        }
+        if (isOffline) {
           AppLoggerHelper.error('No Internet! Request blocked.');
           return handler.reject(DioException(requestOptions: options));
         }
@@ -935,7 +964,13 @@ class DioHelper {
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           final connectivity = await Connectivity().checkConnectivity();
-          if (connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty) {
+          bool isOffline = false;
+          if (connectivity is List) {
+            isOffline = connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty;
+          } else if (connectivity is ConnectivityResult) {
+            isOffline = connectivity == ConnectivityResult.none;
+          }
+          if (isOffline) {
             AppLoggerHelper.error('No Internet! Request blocked.');
             return handler.reject(DioException(requestOptions: options));
           }
@@ -1195,27 +1230,31 @@ class LocalStorageService {
   File('lib/core/services/network_service.dart').writeAsStringSync('''import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final connectivityStreamProvider =
-    StreamProvider<List<ConnectivityResult>>((ref) {
-  return Connectivity().onConnectivityChanged;
+final isConnectedProvider = StreamProvider<bool>((ref) async* {
+  final connectivity = Connectivity();
+  final initial = await connectivity.checkConnectivity();
+  yield _isOnline(initial);
+
+  await for (final event in connectivity.onConnectivityChanged) {
+    yield _isOnline(event);
+  }
 });
 
-final isConnectedProvider = Provider<bool>((ref) {
-  final connectivity = ref.watch(connectivityStreamProvider);
-  return connectivity.when(
-    data: (results) =>
-        !results.contains(ConnectivityResult.none) && results.isNotEmpty,
-    loading: () => true,
-    error: (_, __) => false,
-  );
-});
+bool _isOnline(dynamic result) {
+  if (result is List) {
+    return !result.contains(ConnectivityResult.none) && result.isNotEmpty;
+  } else if (result is ConnectivityResult) {
+    return result != ConnectivityResult.none;
+  }
+  return true;
+}
 
 class NetworkService {
   final Connectivity _connectivity = Connectivity();
 
   Future<bool> checkConnection() async {
-    final results = await _connectivity.checkConnectivity();
-    return !results.contains(ConnectivityResult.none) && results.isNotEmpty;
+    final result = await _connectivity.checkConnectivity();
+    return _isOnline(result);
   }
 }
 
@@ -1226,8 +1265,7 @@ final networkServiceProvider = Provider<NetworkService>((ref) {
 
   // Services: Location
   print('--- Location Service generating... ---');
-  File('lib/core/services/location_service.dart').writeAsStringSync('''import 'package:app_settings/app_settings.dart';
-import 'package:flutter/material.dart';
+  File('lib/core/services/location_service.dart').writeAsStringSync('''import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:location/location.dart' as loc;
@@ -1288,7 +1326,7 @@ class LocationService {
           ElevatedButton(
             onPressed: () async {
               Navigator.of(ctx).pop();
-              AppSettings.openAppSettings(type: AppSettingsType.location);
+              await Geolocator.openLocationSettings();
             },
             child: const Text('Open Settings'),
           ),
@@ -1326,7 +1364,7 @@ class LocationService {
           ElevatedButton(
             onPressed: () async {
               Navigator.of(ctx).pop();
-              AppSettings.openAppSettings(type: AppSettingsType.location);
+              await openAppSettings();
             },
             child: const Text('Open Settings'),
           ),
@@ -1347,7 +1385,6 @@ final locationServiceProvider = Provider<LocationService>((ref) {
   // Services: Media
   print('--- Media Service generating... ---');
   File('lib/core/services/media_service.dart').writeAsStringSync('''import 'dart:io';
-import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import '../utils/logging/logger.dart';
@@ -1383,12 +1420,19 @@ class MediaService {
 
   Future<File?> pickDocument({List<String>? allowedExtensions}) async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: allowedExtensions != null ? FileType.custom : FileType.any,
         allowedExtensions: allowedExtensions,
       );
-      if (result != null && result.files.single.path != null) {
-        return File(result.files.single.path!);
+      if (result != null) {
+        if (result is List && result.isNotEmpty) {
+          final first = result.first;
+          if (first is PlatformFile && first.path != null) {
+            return File(first.path!);
+          }
+        } else if (result.files.isNotEmpty && result.files.first.path != null) {
+          return File(result.files.first.path!);
+        }
       }
     } catch (e) {
       AppLoggerHelper.error('Error picking file: \$e');
@@ -1850,7 +1894,7 @@ class AppFormatters {
     return DateFormat(format).format(date);
   }
 
-  static String formatCurrency(double amount, {String symbol = '\$'}) {
+  static String formatCurrency(double amount, {String symbol = r'\$'}) {
     return NumberFormat.currency(locale: 'en_US', symbol: symbol).format(amount);
   }
 }
@@ -2016,7 +2060,7 @@ class ConnectivityBanner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isConnected = ref.watch(isConnectedProvider);
+    final isConnected = ref.watch(isConnectedProvider).value ?? true;
 
     return Stack(
       children: [
@@ -2283,6 +2327,25 @@ export 'package:$projectName/features/splash/repositories/splash_repository.dart
 export 'package:$projectName/features/splash/models/splash_model.dart';
 ''');
 
+  // Overwriting default test/widget_test.dart to prevent import & ProviderScope errors
+  final testFile = File('test/widget_test.dart');
+  if (testFile.existsSync()) {
+    testFile.writeAsStringSync('''import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:$projectName/app.dart';
+
+void main() {
+  testWidgets('App smoke test', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MyApp(),
+      ),
+    );
+  });
+}
+''');
+  }
+
   // --- SUCCESS MESSAGE & INSTRUCTIONS ---
   print('\n' + '=' * 60);
   print('🏁  ADVANCED RIVERPOD STARTER ARCHITECTURE IS READY!');
@@ -2291,11 +2354,55 @@ export 'package:$projectName/features/splash/models/splash_model.dart';
   print('\n⚠️  IMPORTANT NEXT STEPS:');
   print('------------------------------------------------------------');
   print(' 1️⃣  cd $projectName');
-  print(' 2️⃣  Ensure Roboto font is in assets/fonts/');
+  print(' 2️⃣  (Optional) Add custom fonts to assets/fonts/ & uncomment fonts in pubspec.yaml');
   print(' 3️⃣  dart run rps gen');
   print(' 4️⃣  flutter run');
   print('------------------------------------------------------------');
   print('⚡ Use "dart create_feature.dart <feature_name>" to scaffold modules.');
   print('⚡ Use "dart run rps watch" for continuous build_runner code generation.');
   print('=' * 60 + '\n');
+}
+
+void _configureAndroidSdk() {
+  print('Step 1b: Configuring Android compileSdk = 37 for modern plugins...');
+  final ktsFile = File('android/app/build.gradle.kts');
+  if (ktsFile.existsSync()) {
+    String content = ktsFile.readAsStringSync();
+    if (content.contains('compileSdk = flutter.compileSdkVersion')) {
+      content = content.replaceFirst(
+        'compileSdk = flutter.compileSdkVersion',
+        'compileSdk = 37',
+      );
+    } else if (content.contains(RegExp(r'compileSdk\s*=\s*\d+'))) {
+      content = content.replaceFirst(
+        RegExp(r'compileSdk\s*=\s*\d+'),
+        'compileSdk = 37',
+      );
+    }
+    ktsFile.writeAsStringSync(content);
+    print('   ✅ Configured android/app/build.gradle.kts (compileSdk = 37)');
+  }
+
+  final gradleFile = File('android/app/build.gradle');
+  if (gradleFile.existsSync()) {
+    String content = gradleFile.readAsStringSync();
+    if (content.contains('compileSdk = flutter.compileSdkVersion')) {
+      content = content.replaceFirst(
+        'compileSdk = flutter.compileSdkVersion',
+        'compileSdk = 37',
+      );
+    } else if (content.contains('compileSdkVersion flutter.compileSdkVersion')) {
+      content = content.replaceFirst(
+        'compileSdkVersion flutter.compileSdkVersion',
+        'compileSdkVersion 37',
+      );
+    } else if (content.contains(RegExp(r'compileSdk(Version)?\s*=?\s*\d+'))) {
+      content = content.replaceFirst(
+        RegExp(r'compileSdk(Version)?\s*=?\s*\d+'),
+        'compileSdk = 37',
+      );
+    }
+    gradleFile.writeAsStringSync(content);
+    print('   ✅ Configured android/app/build.gradle (compileSdk = 37)');
+  }
 }
