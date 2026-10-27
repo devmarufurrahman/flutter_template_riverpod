@@ -125,9 +125,11 @@ _Example:_ `dart create_feature.dart login`
 **Automation Highlights:**
 
 - Creates all sub-folders (`views`, `controllers`, `repositories`, `models`, `widgets`).
-- Generates clean boilerplate code with modern Riverpod `AutoDisposeNotifier`, `Provider`, and modularized UI widgets.
-- **Auto-Exports:** Automatically registers all module exports in `lib/core/utils/constants/imports.dart`.
-- **Auto-Route:** Updates `lib/core/router/app_routes.dart` and injects `GoRoute` into `lib/core/router/app_router.dart`.
+- **Riverpod 3.x AsyncValue Pattern:** Generates `AutoDisposeAsyncNotifier` controllers with `AsyncValue.guard()` and view `.when()` state handling.
+- **Clean Repository Architecture:** Generates abstract repository interfaces (`I<Feature>Repository`) and decoupled implementations (`<Feature>Repository`).
+- **Safe GoRouter Injection:** Injects view imports and routes via protected markers in `app_router.dart` and updates `app_routes.dart`.
+- **Clean Scoped Exports:** Registers only public feature APIs in `lib/core/utils/constants/imports.dart` without polluting widgets into the global scope.
+- **Design System Integration:** Pre-configured with `flutter_screenutil` (`.sp`, `.r`, `.h`) and `AppColors`.
 
 ---
 

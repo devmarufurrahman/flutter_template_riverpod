@@ -105,20 +105,19 @@ void main(List<String> args) {
 
   _createFile('\$basePath/views/\${featureName}_view.dart', _viewTemplate(className, camelName, projectName, featureName));
   _createFile('\$basePath/controllers/\${featureName}_controller.dart', _controllerTemplate(className, camelName, projectName));
-  _createFile('\$basePath/repositories/\${featureName}_repository.dart', _repositoryTemplate(className, camelName, projectName));
+  _createFile('\$basePath/repositories/\${featureName}_repository.dart', _repositoryTemplate(className, camelName, projectName, featureName));
   _createFile('\$basePath/models/\${featureName}_model.dart', _modelTemplate(className));
-  _createFile('\$basePath/widgets/\${featureName}_widget.dart', _widgetTemplate(className));
+  _createFile('\$basePath/widgets/\${featureName}_widget.dart', _widgetTemplate(className, camelName, projectName, featureName));
 
   _addToImportsFile('lib/core/utils/constants/imports.dart', projectName, featureName, [
     '\$basePath/views/\${featureName}_view.dart',
     '\$basePath/controllers/\${featureName}_controller.dart',
     '\$basePath/repositories/\${featureName}_repository.dart',
     '\$basePath/models/\${featureName}_model.dart',
-    '\$basePath/widgets/\${featureName}_widget.dart',
   ]);
 
   _addRoute(className, featureName);
-  _addGoRoute(className);
+  _addGoRoute(className, featureName, projectName);
 
   print('\\n✅ Success! Riverpod Feature "\$featureName" created and registered in GoRouter & imports.');
 }
@@ -173,17 +172,39 @@ void _addRoute(String className, String featureName) {
   }
 }
 
-void _addGoRoute(String className) {
+void _addGoRoute(String className, String featureName, String projectName) {
   final file = File('lib/core/router/app_router.dart');
   if (!file.existsSync()) return;
   String content = file.readAsStringSync();
-  String name = className[0].toLowerCase() + className.substring(1);
-  String entry = '\\n        GoRoute(\\n          path: AppRoutes.\$name,\\n          name: AppRoutes.\${name}Name,\\n          builder: (context, state) => const \${className}View(),\\n        ),';
-  if (content.contains('AppRoutes.\$name')) return;
-  int idx = content.lastIndexOf('],');
-  if (idx != -1) {
-    file.writeAsStringSync(content.substring(0, idx) + '\$entry' + content.substring(idx));
+
+  // 1. Ensure view import is present at the top of app_router.dart
+  String viewImport = "import 'package:\$projectName/features/\$featureName/views/\${featureName}_view.dart';";
+  if (!content.contains(viewImport)) {
+    const importMarker = '// --- [FEATURE_IMPORTS] ---';
+    if (content.contains(importMarker)) {
+      content = content.replaceFirst(importMarker, '\$viewImport\\n\$importMarker');
+    } else {
+      content = '\$viewImport\\n' + content;
+    }
   }
+
+  // 2. Inject GoRoute before the routes marker
+  String name = className[0].toLowerCase() + className.substring(1);
+  String routeEntry = '      GoRoute(\\n        path: AppRoutes.\$name,\\n        name: AppRoutes.\${name}Name,\\n        builder: (context, state) => const \${className}View(),\\n      ),\\n';
+
+  if (!content.contains('AppRoutes.\$name')) {
+    const routeMarker = '// --- [FEATURE_ROUTES] ---';
+    if (content.contains(routeMarker)) {
+      content = content.replaceFirst(routeMarker, '\$routeEntry      \$routeMarker');
+    } else {
+      int idx = content.lastIndexOf('],');
+      if (idx != -1) {
+        content = content.substring(0, idx) + routeEntry + content.substring(idx);
+      }
+    }
+  }
+
+  file.writeAsStringSync(content);
 }
 
 String _toSnakeCase(String text) => text.replaceAllMapped(RegExp(r'[A-Z]'), (m) => '_\${m.group(0)!.toLowerCase()}').replaceAll(RegExp(r'^_'), '');
@@ -197,66 +218,78 @@ class \${c}View extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(\${m}ControllerProvider);
+    final asyncState = ref.watch(\${m}ControllerProvider);
 
     return Scaffold(
-      appBar: AppBar(title: Text('\${c}View')),
-      body: \${c}Widget(message: '\${c}View is working with Riverpod!'),
+      appBar: AppBar(
+        title: Text('\${c}'),
+      ),
+      body: asyncState.when(
+        data: (data) => \${c}Widget(data: data),
+        loading: () => const Center(
+          child: CircularProgressIndicator(),
+        ),
+        error: (err, stack) => Center(
+          child: Text(
+            'Error: \\\$err',
+            style: TextStyle(
+              color: AppColors.red,
+              fontSize: 14.sp,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 """;
 
-String _controllerTemplate(String c, String m, String p) => """import 'package:\$p/core/utils/constants/imports.dart';
+String _controllerTemplate(String c, String m, String p) => """import 'dart:async';
+import 'package:\$p/core/utils/constants/imports.dart';
 
-class \${c}State {
-  final bool isLoading;
-  final String? error;
-
-  const \${c}State({
-    this.isLoading = false,
-    this.error,
-  });
-
-  \${c}State copyWith({
-    bool? isLoading,
-    String? error,
-  }) {
-    return \${c}State(
-      isLoading: isLoading ?? this.isLoading,
-      error: error,
-    );
-  }
-}
-
-class \${c}Controller extends Notifier<\${c}State> {
-  late final \${c}Repository _repository;
+class \${c}Controller extends AutoDisposeAsyncNotifier<\${c}Model?> {
+  late final I\${c}Repository _repository;
 
   @override
-  \${c}State build() {
+  FutureOr<\${c}Model?> build() async {
     _repository = ref.watch(\${m}RepositoryProvider);
-    return const \${c}State();
+    return fetchInitialData();
   }
 
-  // Add business logic methods here
+  Future<\${c}Model?> fetchInitialData() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() => _repository.fetchData());
+    return state.value;
+  }
 }
 
 final \${m}ControllerProvider =
-    NotifierProvider.autoDispose<\${c}Controller, \${c}State>(
+    AsyncNotifierProvider.autoDispose<\${c}Controller, \${c}Model?>(
   \${c}Controller.new,
 );
 """;
 
-String _repositoryTemplate(String c, String m, String p) => """import 'package:\$p/core/utils/constants/imports.dart';
+String _repositoryTemplate(String c, String m, String p, String f) => """import 'package:\$p/core/utils/constants/imports.dart';
 
-class \${c}Repository {
+abstract class I\${c}Repository {
+  Future<\${c}Model?> fetchData();
+}
+
+class \${c}Repository implements I\${c}Repository {
   final Dio _dio;
   \${c}Repository(this._dio);
 
-  // Add API calls here
+  Dio get dio => _dio;
+
+  @override
+  Future<\${c}Model?> fetchData() async {
+    // Example API call:
+    // final response = await _dio.get('/api/\${f}');
+    return const \${c}Model(id: '1', title: '\${c} Data Loaded');
+  }
 }
 
-final \${m}RepositoryProvider = Provider.autoDispose<\${c}Repository>((ref) {
+final \${m}RepositoryProvider = Provider.autoDispose<I\${c}Repository>((ref) {
   final dio = ref.watch(dioProvider);
   return \${c}Repository(dio);
 });
@@ -264,22 +297,62 @@ final \${m}RepositoryProvider = Provider.autoDispose<\${c}Repository>((ref) {
 
 String _modelTemplate(String c) => """class \${c}Model {
   final String id;
-  const \${c}Model({required this.id});
+  final String title;
+
+  const \${c}Model({
+    required this.id,
+    required this.title,
+  });
+
+  factory \${c}Model.fromJson(Map<String, dynamic> json) {
+    return \${c}Model(
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+  };
 }
 """;
 
-String _widgetTemplate(String c) => """import 'package:flutter/material.dart';
+String _widgetTemplate(String c, String m, String p, String f) => """import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:\$p/core/utils/constants/colors.dart';
+import '../models/\${f}_model.dart';
 
 class \${c}Widget extends StatelessWidget {
-  final String message;
-  const \${c}Widget({super.key, required this.message});
+  final \${c}Model? data;
+
+  const \${c}Widget({super.key, this.data});
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text(
-        message,
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+      child: Padding(
+        padding: EdgeInsets.all(16.r),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.widgets_outlined,
+              size: 48.r,
+              color: AppColors.primary,
+            ),
+            SizedBox(height: 12.h),
+            Text(
+              data?.title ?? '\${c} module is active!',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w600,
+                color: AppColors.black,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -584,6 +657,7 @@ class MyApp extends ConsumerWidget {
 
   // Router: AppRouter (GoRouter Provider)
   File('lib/core/router/app_router.dart').writeAsStringSync('''import 'package:$projectName/core/utils/constants/imports.dart';
+// --- [FEATURE_IMPORTS] ---
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -596,6 +670,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: AppRoutes.splashName,
         builder: (context, state) => const SplashView(),
       ),
+      // --- [FEATURE_ROUTES] ---
     ],
     errorBuilder: (context, state) => Scaffold(
       body: Center(
@@ -2321,7 +2396,6 @@ export 'package:$projectName/core/common/styles/global_text_style.dart';
 
 // --- Splash Module ---
 export 'package:$projectName/features/splash/views/splash_view.dart';
-export 'package:$projectName/features/splash/widgets/splash_content_widget.dart';
 export 'package:$projectName/features/splash/controllers/splash_controller.dart';
 export 'package:$projectName/features/splash/repositories/splash_repository.dart';
 export 'package:$projectName/features/splash/models/splash_model.dart';
