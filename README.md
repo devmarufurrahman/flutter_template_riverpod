@@ -125,6 +125,8 @@ _Example:_ `dart create_feature.dart login`
 **Automation Highlights:**
 
 - Creates all sub-folders (`views`, `controllers`, `repositories`, `models`, `widgets`).
+- **Freezed Data Models:** Generates immutable `@freezed` models with automatic JSON serialization (`fromJson`/`toJson`).
+- **Automated Background Codegen:** Automatically triggers `build_runner build` immediately after scaffolding so `.freezed.dart` and `.g.dart` are generated without manual intervention.
 - **Riverpod 3.x AsyncValue Pattern:** Generates `AutoDisposeAsyncNotifier` controllers with `AsyncValue.guard()` and view `.when()` state handling.
 - **Clean Repository Architecture:** Generates abstract repository interfaces (`I<Feature>Repository`) and decoupled implementations (`<Feature>Repository`).
 - **Safe GoRouter Injection:** Injects view imports and routes via protected markers in `app_router.dart` and updates `app_routes.dart`.

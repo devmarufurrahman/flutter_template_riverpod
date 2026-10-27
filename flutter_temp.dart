@@ -70,12 +70,28 @@ output-dir: lib/generated/l10n
 untranslated-messages-file: lib/l10n/untranslated.json
 ''');
 
+  File('analysis_options.yaml').writeAsStringSync('''include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    invalid_export_of_internal_element: ignore
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+''');
+
   // --- Create Feature Script (Project Root) ---
   print('📝 Generating "create_feature.dart" in project root (Riverpod Architecture)...');
 
-  File('create_feature.dart').writeAsStringSync('''import 'dart:io';
+  File('create_feature.dart').writeAsStringSync('''// ignore_for_file: avoid_print, prefer_interpolation_to_compose_strings, unnecessary_brace_in_string_interps
+import 'dart:io';
 
-void main(List<String> args) {
+Future<void> main(List<String> args) async {
   if (args.isEmpty) {
     print('❌ Error: Please provide a feature name.');
     print('Usage: dart create_feature.dart <feature_name> [optional_path]');
@@ -95,7 +111,7 @@ void main(List<String> args) {
   if (targetDir.endsWith('/')) targetDir = targetDir.substring(0, targetDir.length - 1);
   String basePath = '\$targetDir/\$featureName';
 
-  print('🚀 Creating feature: \$featureName with Riverpod architecture...');
+  print('🚀 Creating feature: \$featureName with Riverpod & Freezed architecture...');
 
   _createDirectory('\$basePath/views');
   _createDirectory('\$basePath/controllers');
@@ -106,7 +122,7 @@ void main(List<String> args) {
   _createFile('\$basePath/views/\${featureName}_view.dart', _viewTemplate(className, camelName, projectName, featureName));
   _createFile('\$basePath/controllers/\${featureName}_controller.dart', _controllerTemplate(className, camelName, projectName));
   _createFile('\$basePath/repositories/\${featureName}_repository.dart', _repositoryTemplate(className, camelName, projectName, featureName));
-  _createFile('\$basePath/models/\${featureName}_model.dart', _modelTemplate(className));
+  _createFile('\$basePath/models/\${featureName}_model.dart', _modelTemplate(className, featureName));
   _createFile('\$basePath/widgets/\${featureName}_widget.dart', _widgetTemplate(className, camelName, projectName, featureName));
 
   _addToImportsFile('lib/core/utils/constants/imports.dart', projectName, featureName, [
@@ -118,6 +134,14 @@ void main(List<String> args) {
 
   _addRoute(className, featureName);
   _addGoRoute(className, featureName, projectName);
+
+  print('\\n⚡ Automatically running build_runner for \$featureName (Freezed codegen)...');
+  final codegen = await Process.run('dart', ['run', 'build_runner', 'build', '--delete-conflicting-outputs'], runInShell: true);
+  if (codegen.exitCode == 0) {
+    print('✅ Freezed codegen completed successfully.');
+  } else {
+    print('ℹ️  Codegen finished with code \${codegen.exitCode}. Run "dart run rps gen" if needed.');
+  }
 
   print('\\n✅ Success! Riverpod Feature "\$featureName" created and registered in GoRouter & imports.');
 }
@@ -177,18 +201,7 @@ void _addGoRoute(String className, String featureName, String projectName) {
   if (!file.existsSync()) return;
   String content = file.readAsStringSync();
 
-  // 1. Ensure view import is present at the top of app_router.dart
-  String viewImport = "import 'package:\$projectName/features/\$featureName/views/\${featureName}_view.dart';";
-  if (!content.contains(viewImport)) {
-    const importMarker = '// --- [FEATURE_IMPORTS] ---';
-    if (content.contains(importMarker)) {
-      content = content.replaceFirst(importMarker, '\$viewImport\\n\$importMarker');
-    } else {
-      content = '\$viewImport\\n' + content;
-    }
-  }
-
-  // 2. Inject GoRoute before the routes marker
+  // Inject GoRoute before the routes marker
   String name = className[0].toLowerCase() + className.substring(1);
   String routeEntry = '      GoRoute(\\n        path: AppRoutes.\$name,\\n        name: AppRoutes.\${name}Name,\\n        builder: (context, state) => const \${className}View(),\\n      ),\\n';
 
@@ -247,7 +260,7 @@ class \${c}View extends ConsumerWidget {
 String _controllerTemplate(String c, String m, String p) => """import 'dart:async';
 import 'package:\$p/core/utils/constants/imports.dart';
 
-class \${c}Controller extends AutoDisposeAsyncNotifier<\${c}Model?> {
+class \${c}Controller extends AsyncNotifier<\${c}Model?> {
   late final I\${c}Repository _repository;
 
   @override
@@ -295,28 +308,25 @@ final \${m}RepositoryProvider = Provider.autoDispose<I\${c}Repository>((ref) {
 });
 """;
 
-String _modelTemplate(String c) => """class \${c}Model {
-  final String id;
-  final String title;
+String _modelTemplate(String c, String f) {
+  const d = '\\\$';
+  return """import 'package:freezed_annotation/freezed_annotation.dart';
 
-  const \${c}Model({
-    required this.id,
-    required this.title,
-  });
+part '\${f}_model.freezed.dart';
+part '\${f}_model.g.dart';
 
-  factory \${c}Model.fromJson(Map<String, dynamic> json) {
-    return \${c}Model(
-      id: json['id'] as String? ?? '',
-      title: json['title'] as String? ?? '',
-    );
-  }
+@freezed
+abstract class \${c}Model with _\${d}\${c}Model {
+  const factory \${c}Model({
+    required String id,
+    required String title,
+  }) = _\${c}Model;
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'title': title,
-  };
+  factory \${c}Model.fromJson(Map<String, dynamic> json) =>
+      _\${d}\${c}ModelFromJson(json);
 }
 """;
+}
 
 String _widgetTemplate(String c, String m, String p, String f) => """import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -784,6 +794,7 @@ class SplashState {
 
 class SplashController extends Notifier<SplashState> {
   late final SplashRepository _repository;
+  SplashRepository get repository => _repository;
 
   @override
   SplashState build() {
@@ -806,6 +817,8 @@ class SplashRepository {
   final Dio _dio;
   SplashRepository(this._dio);
 
+  Dio get dio => _dio;
+
   // Add API calls here
 }
 
@@ -815,9 +828,19 @@ final splashRepositoryProvider = Provider.autoDispose<SplashRepository>((ref) {
 });
 ''');
 
-  File('lib/features/splash/models/splash_model.dart').writeAsStringSync('''class SplashModel {
-  final String id;
-  const SplashModel({required this.id});
+  File('lib/features/splash/models/splash_model.dart').writeAsStringSync('''import 'package:freezed_annotation/freezed_annotation.dart';
+
+part 'splash_model.freezed.dart';
+part 'splash_model.g.dart';
+
+@freezed
+abstract class SplashModel with _\$SplashModel {
+  const factory SplashModel({
+    required String id,
+  }) = _SplashModel;
+
+  factory SplashModel.fromJson(Map<String, dynamic> json) =>
+      _\$SplashModelFromJson(json);
 }
 ''');
 
@@ -947,12 +970,7 @@ final dioProvider = Provider<Dio>((ref) {
     InterceptorsWrapper(
       onRequest: (options, handler) async {
         final connectivity = await Connectivity().checkConnectivity();
-        bool isOffline = false;
-        if (connectivity is List) {
-          isOffline = connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty;
-        } else if (connectivity is ConnectivityResult) {
-          isOffline = connectivity == ConnectivityResult.none;
-        }
+        final bool isOffline = connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty;
         if (isOffline) {
           AppLoggerHelper.error('No Internet! Request blocked.');
           return handler.reject(DioException(requestOptions: options));
@@ -987,7 +1005,6 @@ final dioProvider = Provider<Dio>((ref) {
 ''');
 
   File('lib/core/network/dio_helper.dart').writeAsStringSync('''import '../utils/constants/imports.dart';
-import 'package:dio/dio.dart';
 import 'package:dio_smart_retry/dio_smart_retry.dart';
 
 class DioHelper {
@@ -1039,12 +1056,7 @@ class DioHelper {
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           final connectivity = await Connectivity().checkConnectivity();
-          bool isOffline = false;
-          if (connectivity is List) {
-            isOffline = connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty;
-          } else if (connectivity is ConnectivityResult) {
-            isOffline = connectivity == ConnectivityResult.none;
-          }
+          final bool isOffline = connectivity.contains(ConnectivityResult.none) || connectivity.isEmpty;
           if (isOffline) {
             AppLoggerHelper.error('No Internet! Request blocked.');
             return handler.reject(DioException(requestOptions: options));
@@ -1078,7 +1090,6 @@ class DioHelper {
 
   // Network: HttpMethod
   File('lib/core/network/http_method.dart').writeAsStringSync('''import '../utils/constants/imports.dart';
-import 'package:dio/dio.dart';
 
 class HttpMethod {
   final Dio _dio;
@@ -1499,15 +1510,8 @@ class MediaService {
         type: allowedExtensions != null ? FileType.custom : FileType.any,
         allowedExtensions: allowedExtensions,
       );
-      if (result != null) {
-        if (result is List && result.isNotEmpty) {
-          final first = result.first;
-          if (first is PlatformFile && first.path != null) {
-            return File(first.path!);
-          }
-        } else if (result.files.isNotEmpty && result.files.first.path != null) {
-          return File(result.files.first.path!);
-        }
+      if (result.isNotEmpty && result.first.path != null) {
+        return File(result.first.path!);
       }
     } catch (e) {
       AppLoggerHelper.error('Error picking file: \$e');
@@ -1535,6 +1539,7 @@ class NotificationService {
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
       AppLoggerHelper.info('Notification permission granted.');
+      // ignore: deprecated_member_use
       String? token = await _fcm.getToken();
       AppLoggerHelper.info('FCM Token: \$token');
 
@@ -1606,7 +1611,7 @@ class AppTheme {
     scaffoldBackgroundColor: Colors.white,
     textTheme: AppTextTheme.lightTextTheme,
     elevatedButtonTheme: AppElevatedButtonTheme.lightElevatedButtonTheme,
-    appBarTheme: App_BarTheme.lightAppBarTheme,
+    appBarTheme: CustomAppBarTheme.lightAppBarTheme,
     inputDecorationTheme: AppTextFormFieldTheme.lightInputDecorationTheme,
   );
 
@@ -1617,7 +1622,7 @@ class AppTheme {
     scaffoldBackgroundColor: Colors.black,
     textTheme: AppTextTheme.darkTextTheme,
     elevatedButtonTheme: AppElevatedButtonTheme.darkElevatedButtonTheme,
-    appBarTheme: App_BarTheme.darkAppBarTheme,
+    appBarTheme: CustomAppBarTheme.darkAppBarTheme,
     inputDecorationTheme: AppTextFormFieldTheme.darkInputDecorationTheme,
   );
 }
@@ -1723,7 +1728,7 @@ class AppTextFormFieldTheme {
     labelStyle: const TextStyle().copyWith(fontSize: 14, color: Colors.black87),
     hintStyle: const TextStyle().copyWith(fontSize: 14, color: Colors.black38),
     errorStyle: const TextStyle().copyWith(fontStyle: FontStyle.normal),
-    floatingLabelStyle: const TextStyle().copyWith(color: Colors.black.withOpacity(0.8)),
+    floatingLabelStyle: const TextStyle().copyWith(color: Colors.black.withValues(alpha: 0.8)),
     border: const OutlineInputBorder().copyWith(
       borderRadius: BorderRadius.circular(14),
       borderSide: const BorderSide(width: 1, color: Colors.grey),
@@ -1753,7 +1758,7 @@ class AppTextFormFieldTheme {
     labelStyle: const TextStyle().copyWith(fontSize: 14, color: Colors.white),
     hintStyle: const TextStyle().copyWith(fontSize: 14, color: Colors.white38),
     errorStyle: const TextStyle().copyWith(fontStyle: FontStyle.normal),
-    floatingLabelStyle: const TextStyle().copyWith(color: Colors.white.withOpacity(0.8)),
+    floatingLabelStyle: const TextStyle().copyWith(color: Colors.white.withValues(alpha: 0.8)),
     border: const OutlineInputBorder().copyWith(
       borderRadius: BorderRadius.circular(14),
       borderSide: const BorderSide(width: 1, color: Colors.grey),
@@ -1781,8 +1786,8 @@ class AppTextFormFieldTheme {
   File('lib/core/theme/custom_theme/app_bar_theme.dart').writeAsStringSync('''import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-class App_BarTheme {
-  App_BarTheme._();
+class CustomAppBarTheme {
+  CustomAppBarTheme._();
 
   static const lightAppBarTheme = AppBarTheme(
     elevation: 0,
@@ -2420,6 +2425,16 @@ void main() {
 ''');
   }
 
+  // Step 7: Automated Initial Codegen (Freezed & Localization)
+  print('Step 7: Running automated initial codegen (Freezed & Localization)...');
+  await Process.run('flutter', ['gen-l10n'], runInShell: true);
+  final initialCodegen = await Process.run('dart', ['run', 'build_runner', 'build', '--delete-conflicting-outputs'], runInShell: true);
+  if (initialCodegen.exitCode == 0) {
+    print('   ✅ Initial Freezed models generated successfully.');
+  } else {
+    print('   ℹ️  Note: You can run "dart run rps gen" after setup if needed.');
+  }
+
   // --- SUCCESS MESSAGE & INSTRUCTIONS ---
   print('\n' + '=' * 60);
   print('🏁  ADVANCED RIVERPOD STARTER ARCHITECTURE IS READY!');
@@ -2429,11 +2444,11 @@ void main() {
   print('------------------------------------------------------------');
   print(' 1️⃣  cd $projectName');
   print(' 2️⃣  (Optional) Add custom fonts to assets/fonts/ & uncomment fonts in pubspec.yaml');
-  print(' 3️⃣  dart run rps gen');
+  print(' 3️⃣  dart run rps gen (or let create_feature.dart auto-generate)');
   print(' 4️⃣  flutter run');
   print('------------------------------------------------------------');
-  print('⚡ Use "dart create_feature.dart <feature_name>" to scaffold modules.');
-  print('⚡ Use "dart run rps watch" for continuous build_runner code generation.');
+  print('⚡ Use "dart create_feature.dart <feature_name>" to auto-scaffold modules with Freezed & GoRouter.');
+  print('⚡ Use "dart run rps watch" for continuous background code generation.');
   print('=' * 60 + '\n');
 }
 
