@@ -86,7 +86,7 @@ lib/
 ├── core/
 │   ├── router/             # GoRouter Provider (routerProvider) & AppRoutes
 │   ├── localization/       # LocaleNotifier, localeProvider, and BuildContext.tr extension
-│   ├── network/            # DioProvider, DioHelper & HttpMethod with Retry & Auth interceptors
+│   ├── network/            # DioProvider, ApiClient (Retrofit), DioHelper & HttpMethod with Retry & Auth interceptors
 │   ├── services/           # StorageService, NetworkService, Location, Media, Notifications
 │   ├── theme/              # Light/Dark AppTheme, ThemeModeNotifier, themeModeProvider
 │   ├── common/             # Global Widgets, Styles, Dialogs, ConnectivityBanner & Custom BottomSheet
@@ -102,8 +102,8 @@ lib/
 │   └── [feature_name]/
 │       ├── views/          # Screen UI (ConsumerWidget)
 │       ├── controllers/    # State Notifiers & Providers (AutoDisposeNotifier)
-│       ├── repositories/   # Data Source & API Repositories (Provider)
-│       ├── models/         # Feature Data Models
+│       ├── repositories/   # Retrofit API Service (@RestApi) & Data Repositories (Provider)
+│       ├── models/         # Feature Data Models (@freezed)
 │       └── widgets/        # Feature-specific sub-widgets (Modularized)
 └── l10n/                   # Multi-language (ARB files)
 ```
@@ -126,9 +126,10 @@ _Example:_ `dart create_feature.dart login`
 
 - Creates all sub-folders (`views`, `controllers`, `repositories`, `models`, `widgets`).
 - **Freezed Data Models:** Generates immutable `@freezed` models with automatic JSON serialization (`fromJson`/`toJson`).
-- **Automated Background Codegen:** Automatically triggers `build_runner build` immediately after scaffolding so `.freezed.dart` and `.g.dart` are generated without manual intervention.
+- **Type-Safe Retrofit API Client:** Generates `@RestApi()` annotated `<Feature>ApiService` (`<feature>_api_service.dart`) wired directly to `dioProvider` and injected into `<Feature>Repository`.
+- **Automated Background Codegen:** Automatically triggers `build_runner build` immediately after scaffolding so `.freezed.dart` and `.g.dart` (Freezed + Retrofit) are generated without manual intervention.
 - **Riverpod 3.x AsyncValue Pattern:** Generates `AutoDisposeAsyncNotifier` controllers with `AsyncValue.guard()` and view `.when()` state handling.
-- **Clean Repository Architecture:** Generates abstract repository interfaces (`I<Feature>Repository`) and decoupled implementations (`<Feature>Repository`).
+- **Clean Repository Architecture:** Generates abstract repository interfaces (`I<Feature>Repository`) and decoupled implementations (`<Feature>Repository`) with both Retrofit `apiService` and `Dio` access.
 - **Safe GoRouter Injection:** Injects view imports and routes via protected markers in `app_router.dart` and updates `app_routes.dart`.
 - **Clean Scoped Exports:** Registers only public feature APIs in `lib/core/utils/constants/imports.dart` without polluting widgets into the global scope.
 - **Design System Integration:** Pre-configured with `flutter_screenutil` (`.sp`, `.r`, `.h`) and `AppColors`.
@@ -139,11 +140,11 @@ _Example:_ `dart create_feature.dart login`
 
 - **State Management & Codegen:** `flutter_riverpod`, `riverpod_annotation`, `freezed_annotation`, `json_annotation`
 - **Routing:** `go_router`
-- **Networking:** `dio`, `dio_smart_retry`, `dio_cache_interceptor`, `pretty_dio_logger`
+- **Networking:** `dio`, `retrofit`, `dio_smart_retry`, `dio_cache_interceptor`, `pretty_dio_logger`
 - **Storage:** `shared_preferences`
 - **UI/UX:** `flutter_screenutil`, `lottie`, `flutter_svg`, `google_fonts`, `shimmer`, `zo_animated_border`
 - **Services:** `firebase_core`, `firebase_messaging`, `firebase_analytics`, `firebase_crashlytics`, `geolocator`
-- **Dev & Automation:** `build_runner`, `riverpod_generator`, `freezed`, `json_serializable`, `rps`, `flutter_dotenv`
+- **Dev & Automation:** `build_runner`, `riverpod_generator`, `freezed`, `json_serializable`, `retrofit_generator`, `rps`, `flutter_dotenv`
 
 ---
 

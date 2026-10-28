@@ -111,7 +111,7 @@ Future<void> main(List<String> args) async {
   if (targetDir.endsWith('/')) targetDir = targetDir.substring(0, targetDir.length - 1);
   String basePath = '\$targetDir/\$featureName';
 
-  print('🚀 Creating feature: \$featureName with Riverpod & Freezed architecture...');
+  print('🚀 Creating feature: \$featureName with Riverpod, Freezed & Retrofit architecture...');
 
   _createDirectory('\$basePath/views');
   _createDirectory('\$basePath/controllers');
@@ -121,6 +121,7 @@ Future<void> main(List<String> args) async {
 
   _createFile('\$basePath/views/\${featureName}_view.dart', _viewTemplate(className, camelName, projectName, featureName));
   _createFile('\$basePath/controllers/\${featureName}_controller.dart', _controllerTemplate(className, camelName, projectName));
+  _createFile('\$basePath/repositories/\${featureName}_api_service.dart', _apiServiceTemplate(className, camelName, projectName, featureName));
   _createFile('\$basePath/repositories/\${featureName}_repository.dart', _repositoryTemplate(className, camelName, projectName, featureName));
   _createFile('\$basePath/models/\${featureName}_model.dart', _modelTemplate(className, featureName));
   _createFile('\$basePath/widgets/\${featureName}_widget.dart', _widgetTemplate(className, camelName, projectName, featureName));
@@ -128,6 +129,7 @@ Future<void> main(List<String> args) async {
   _addToImportsFile('lib/core/utils/constants/imports.dart', projectName, featureName, [
     '\$basePath/views/\${featureName}_view.dart',
     '\$basePath/controllers/\${featureName}_controller.dart',
+    '\$basePath/repositories/\${featureName}_api_service.dart',
     '\$basePath/repositories/\${featureName}_repository.dart',
     '\$basePath/models/\${featureName}_model.dart',
   ]);
@@ -135,10 +137,10 @@ Future<void> main(List<String> args) async {
   _addRoute(className, featureName);
   _addGoRoute(className, featureName, projectName);
 
-  print('\\n⚡ Automatically running build_runner for \$featureName (Freezed codegen)...');
+  print('\\n⚡ Automatically running build_runner for \$featureName (Freezed & Retrofit codegen)...');
   final codegen = await Process.run('dart', ['run', 'build_runner', 'build', '--delete-conflicting-outputs'], runInShell: true);
   if (codegen.exitCode == 0) {
-    print('✅ Freezed codegen completed successfully.');
+    print('✅ Freezed & Retrofit codegen completed successfully.');
   } else {
     print('ℹ️  Codegen finished with code \${codegen.exitCode}. Run "dart run rps gen" if needed.');
   }
@@ -282,6 +284,37 @@ final \${m}ControllerProvider =
 );
 """;
 
+String _apiServiceTemplate(String c, String m, String p, String f) {
+  const d = '\\\$';
+  return """import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:retrofit/retrofit.dart';
+import 'package:\$p/core/network/dio_provider.dart';
+import '../models/\${f}_model.dart';
+
+part '\${f}_api_service.g.dart';
+
+@RestApi()
+abstract class \${c}ApiService {
+  factory \${c}ApiService(Dio dio, {String? baseUrl}) = _\${c}ApiService;
+
+  @GET('/api/\${f}')
+  Future<\${c}Model> fetchData();
+
+  @GET('/api/\${f}/{id}')
+  Future<\${c}Model> fetchById(@Path('id') String id);
+
+  @POST('/api/\${f}')
+  Future<\${c}Model> createData(@Body() Map<String, dynamic> body);
+}
+
+final \${m}ApiServiceProvider = Provider.autoDispose<\${c}ApiService>((ref) {
+  final dio = ref.watch(dioProvider);
+  return \${c}ApiService(dio);
+});
+""";
+}
+
 String _repositoryTemplate(String c, String m, String p, String f) => """import 'package:\$p/core/utils/constants/imports.dart';
 
 abstract class I\${c}Repository {
@@ -289,22 +322,25 @@ abstract class I\${c}Repository {
 }
 
 class \${c}Repository implements I\${c}Repository {
+  final \${c}ApiService _apiService;
   final Dio _dio;
-  \${c}Repository(this._dio);
+  \${c}Repository(this._apiService, this._dio);
 
+  \${c}ApiService get apiService => _apiService;
   Dio get dio => _dio;
 
   @override
   Future<\${c}Model?> fetchData() async {
-    // Example API call:
-    // final response = await _dio.get('/api/\${f}');
+    // Example Retrofit API call:
+    // return await _apiService.fetchData();
     return const \${c}Model(id: '1', title: '\${c} Data Loaded');
   }
 }
 
 final \${m}RepositoryProvider = Provider.autoDispose<I\${c}Repository>((ref) {
+  final apiService = ref.watch(\${m}ApiServiceProvider);
   final dio = ref.watch(dioProvider);
-  return \${c}Repository(dio);
+  return \${c}Repository(apiService, dio);
 });
 """;
 
@@ -447,6 +483,7 @@ flutter:
     'logger',
     'video_player',
     'dio',
+    'retrofit',
     'pretty_dio_logger',
     'connectivity_plus',
     'dio_smart_retry',
@@ -496,6 +533,7 @@ flutter:
     'riverpod_generator',
     'freezed',
     'json_serializable',
+    'retrofit_generator',
     'flutter_gen_runner',
     'flutter_flavorizr',
   ];
@@ -811,20 +849,45 @@ final splashControllerProvider =
 );
 ''');
 
+  File('lib/features/splash/repositories/splash_api_service.dart').writeAsStringSync('''import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:retrofit/retrofit.dart';
+import 'package:$projectName/core/network/dio_provider.dart';
+import '../models/splash_model.dart';
+
+part 'splash_api_service.g.dart';
+
+@RestApi()
+abstract class SplashApiService {
+  factory SplashApiService(Dio dio, {String? baseUrl}) = _SplashApiService;
+
+  @GET('/api/splash')
+  Future<SplashModel> fetchSplashData();
+}
+
+final splashApiServiceProvider = Provider.autoDispose<SplashApiService>((ref) {
+  final dio = ref.watch(dioProvider);
+  return SplashApiService(dio);
+});
+''');
+
   File('lib/features/splash/repositories/splash_repository.dart').writeAsStringSync('''import 'package:$projectName/core/utils/constants/imports.dart';
 
 class SplashRepository {
+  final SplashApiService _apiService;
   final Dio _dio;
-  SplashRepository(this._dio);
+  SplashRepository(this._apiService, this._dio);
 
+  SplashApiService get apiService => _apiService;
   Dio get dio => _dio;
 
-  // Add API calls here
+  // Add API calls here using _apiService or _dio
 }
 
 final splashRepositoryProvider = Provider.autoDispose<SplashRepository>((ref) {
+  final apiService = ref.watch(splashApiServiceProvider);
   final dio = ref.watch(dioProvider);
-  return SplashRepository(dio);
+  return SplashRepository(apiService, dio);
 });
 ''');
 
@@ -1230,6 +1293,29 @@ class HttpMethod {
 final httpMethodProvider = Provider<HttpMethod>((ref) {
   final dio = ref.watch(dioProvider);
   return HttpMethod(dio);
+});
+''');
+
+  // Network: Retrofit ApiClient (Global / Shared REST Client)
+  print('--- Network Retrofit ApiClient generating... ---');
+  File('lib/core/network/api_client.dart').writeAsStringSync('''import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:retrofit/retrofit.dart';
+import 'dio_provider.dart';
+
+part 'api_client.g.dart';
+
+@RestApi()
+abstract class ApiClient {
+  factory ApiClient(Dio dio, {String? baseUrl}) = _ApiClient;
+
+  @GET('/health')
+  Future<dynamic> checkHealth();
+}
+
+final apiClientProvider = Provider<ApiClient>((ref) {
+  final dio = ref.watch(dioProvider);
+  return ApiClient(dio);
 });
 ''');
 
@@ -2330,6 +2416,7 @@ export 'package:riverpod_annotation/riverpod_annotation.dart';
 export 'package:freezed_annotation/freezed_annotation.dart';
 export 'package:go_router/go_router.dart';
 export 'package:dio/dio.dart';
+export 'package:retrofit/retrofit.dart';
 export 'package:lottie/lottie.dart';
 export 'package:connectivity_plus/connectivity_plus.dart';
 export 'package:pretty_dio_logger/pretty_dio_logger.dart';
@@ -2362,6 +2449,7 @@ export 'package:$projectName/core/utils/navigation/app_navigation.dart';
 export 'package:$projectName/core/network/dio_provider.dart';
 export 'package:$projectName/core/network/dio_helper.dart';
 export 'package:$projectName/core/network/http_method.dart';
+export 'package:$projectName/core/network/api_client.dart';
 export 'package:$projectName/core/services/media_service.dart';
 export 'package:$projectName/core/services/notification_service.dart';
 export 'package:$projectName/core/services/analytics_service.dart';
@@ -2402,6 +2490,7 @@ export 'package:$projectName/core/common/styles/global_text_style.dart';
 // --- Splash Module ---
 export 'package:$projectName/features/splash/views/splash_view.dart';
 export 'package:$projectName/features/splash/controllers/splash_controller.dart';
+export 'package:$projectName/features/splash/repositories/splash_api_service.dart';
 export 'package:$projectName/features/splash/repositories/splash_repository.dart';
 export 'package:$projectName/features/splash/models/splash_model.dart';
 ''');
@@ -2425,12 +2514,12 @@ void main() {
 ''');
   }
 
-  // Step 7: Automated Initial Codegen (Freezed & Localization)
-  print('Step 7: Running automated initial codegen (Freezed & Localization)...');
+  // Step 7: Automated Initial Codegen (Freezed, Retrofit & Localization)
+  print('Step 7: Running automated initial codegen (Freezed, Retrofit & Localization)...');
   await Process.run('flutter', ['gen-l10n'], runInShell: true);
   final initialCodegen = await Process.run('dart', ['run', 'build_runner', 'build', '--delete-conflicting-outputs'], runInShell: true);
   if (initialCodegen.exitCode == 0) {
-    print('   ✅ Initial Freezed models generated successfully.');
+    print('   ✅ Initial Freezed models & Retrofit clients generated successfully.');
   } else {
     print('   ℹ️  Note: You can run "dart run rps gen" after setup if needed.');
   }
@@ -2447,7 +2536,7 @@ void main() {
   print(' 3️⃣  dart run rps gen (or let create_feature.dart auto-generate)');
   print(' 4️⃣  flutter run');
   print('------------------------------------------------------------');
-  print('⚡ Use "dart create_feature.dart <feature_name>" to auto-scaffold modules with Freezed & GoRouter.');
+  print('⚡ Use "dart create_feature.dart <feature_name>" to auto-scaffold modules with Freezed, Retrofit & GoRouter.');
   print('⚡ Use "dart run rps watch" for continuous background code generation.');
   print('=' * 60 + '\n');
 }
